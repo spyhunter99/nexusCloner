@@ -28,6 +28,7 @@ import javax.net.ssl.X509TrustManager;
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.CommandLineParser;
 import org.apache.commons.cli.DefaultParser;
+import org.apache.commons.cli.HelpFormatter;
 import org.apache.commons.cli.Options;
 import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.io.FileUtils;
@@ -45,8 +46,6 @@ import org.jsoup.nodes.Element;
  * @author alex.oree
  */
 public class Main {
-
-    static ArrayList<Container> failures = new ArrayList<>();
 
     static class Container {
 
@@ -74,18 +73,19 @@ public class Main {
     }
 
     static class DownloadWorker implements Runnable {
+
         @Override
         public void run() {
-            while (!filesToDownload.isEmpty()) {
+            while (running && !filesToDownload.isEmpty()) {
                 Container remove = filesToDownload.remove();
                 if (remove != null) {
                     try {
                         File f = new File(remove.destinationPath);
-                        if (f.exists() && f.length()>0) {
+                        if (f.exists() && f.length() > 0) {
                             //skip it
                         } else {
                             System.out.println("[" + filesToDownload.size() + "] downloading " + remove.url + " to " + remove.destinationPath);
-                            
+
                             f.getParentFile().mkdirs();
 
                             CloseableHttpClient client = HttpClients.createDefault();
@@ -93,9 +93,16 @@ public class Main {
                             if (cookie != null) {
                                 get.addHeader("Cookie", cookie);
                             }
+                            if (auth != null) {
+                                get.addHeader("Authorization", "Basic " + auth);
+                            }
+
                             CloseableHttpResponse execute = client.execute(get);
                             HttpEntity entity = execute.getEntity();
                             System.out.println(execute.getStatusLine().getStatusCode() + ": " + execute.getStatusLine().getReasonPhrase());
+                            if (execute.getStatusLine().getStatusCode() != 200) {
+                                throw new SecurityException(execute.getStatusLine().getStatusCode() + ": " + execute.getStatusLine().getReasonPhrase());
+                            }
                             FileOutputStream os = new FileOutputStream(f);
                             InputStream is = entity.getContent();
                             byte[] buf = new byte[8192];
@@ -114,10 +121,16 @@ public class Main {
                             //FileUtils.copyInputStreamToFile(entity.getContent(), f);
                             get.releaseConnection();
                         }
+                    } catch (SecurityException ex) {
+                        System.err.println("Download error!" + remove.url);
+                        ex.printStackTrace();
+                        remove.ex = ex;
+                        failures.add(remove);
+                        return; //no need to continue download attempts
                     } catch (Exception ex) {
                         System.err.println("Download error!" + remove.url);
                         ex.printStackTrace();
-                        remove.ex=ex;
+                        remove.ex = ex;
                         failures.add(remove);
                     }
                 }
@@ -125,6 +138,9 @@ public class Main {
         }
 
     }
+
+    static boolean running = true;
+    static ArrayList<Container> failures = new ArrayList<>();
 
     static String sourceUrl = "";
     static String auth = null;
@@ -143,6 +159,7 @@ public class Main {
         opts.addOption("cookie", false, "prompt for cookie token");
         opts.addOption("username", true, "");
         opts.addOption("password", true, "prompt for password");
+        opts.addOption("output", true, "output folder, default is ./output/");
         opts.addOption("threads", true, "threads for concurrent downloads");
         opts.addOption("help", false, "help");
 
@@ -150,6 +167,14 @@ public class Main {
         CommandLine parse = parser.parse(opts, args);
 
         initSsl();
+        if (parse.hasOption("help") 
+                || !parse.hasOption("url") 
+                || (!parse.hasOption("index") && !parse.hasOption("download") )){
+            HelpFormatter f = new HelpFormatter();
+            f.printHelp("java -jar nexusCloner-{VERSION}-jar-with-dependencies.jar {options}", opts);
+            return;
+        }
+        
         String url = parse.getOptionValue("url");
         if (!url.endsWith("/")) {
             url = url + "/";
@@ -170,7 +195,11 @@ public class Main {
             System.out.println("using cookie " + cookie);
         }
         sourceUrl = url;
-        File outputFolder = new File("./output");
+        File outputFolder;
+        if (parse.hasOption("output")) {
+            outputFolder= new File(parse.getOptionValue("output"));
+        } else 
+            outputFolder= new File("./output");
         outputFolder.mkdirs();
         Kryo kryo = new Kryo();
         if (parse.hasOption("index")) {
@@ -210,16 +239,20 @@ public class Main {
                 DownloadWorker dw = new DownloadWorker();
                 new Thread(dw).start();
             }
+
             Runtime.getRuntime().addShutdownHook(new Thread(new Runnable() {
                 @Override
                 public void run() {
                     System.out.println("processed in " + (System.currentTimeMillis() - now) + "ms");
                     System.out.println("Download failures: " + failures.size());
-                    for (int i=0; i < failures.size(); i++){
+                    for (int i = 0; i < failures.size(); i++) {
                         System.out.println(failures.get(i).url + ": " + failures.get(i).ex.getMessage());
                     }
                 }
             }));
+            System.out.println("PRESS ENTER TO STOP THE DOWNLOADS AFTER THE CURRENT FILES END");
+            System.console().readLine();
+            running = false;
         }
 
         System.out.println("processed in " + (System.currentTimeMillis() - now) + "ms");
