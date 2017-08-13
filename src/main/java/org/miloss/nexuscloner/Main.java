@@ -12,7 +12,6 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
-import static java.lang.System.out;
 import java.net.URL;
 import java.security.SecureRandom;
 import java.security.cert.CertificateException;
@@ -135,6 +134,7 @@ public class Main {
                     }
                 }
             }
+            System.out.println(Thread.currentThread().getId() + " thread terminated");
         }
 
     }
