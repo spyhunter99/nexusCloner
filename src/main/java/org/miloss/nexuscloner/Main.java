@@ -222,8 +222,12 @@ public class Main {
         }
         if (parse.hasOption("download")) {
             if (filesToDownload.isEmpty()) {
-
-                Input input = new Input(new FileInputStream("index.bin"));
+                File f = new File("index.bin");
+                if (!f.exists()) {
+                    System.out.println("index.bin is missing, run with the -index option first.")
+                    return;
+                }
+                Input input = new Input(new FileInputStream(f));
                 Wrapper someObject = kryo.readObject(input, Wrapper.class);
                 input.close();
                 filesToDownload.addAll(someObject.data);
