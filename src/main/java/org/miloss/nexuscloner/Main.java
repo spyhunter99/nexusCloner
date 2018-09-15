@@ -224,7 +224,7 @@ public class Main {
             if (filesToDownload.isEmpty()) {
                 File f = new File("index.bin");
                 if (!f.exists()) {
-                    System.out.println("index.bin is missing, run with the -index option first.")
+                    System.out.println("index.bin is missing, run with the -index option first.");
                     return;
                 }
                 Input input = new Input(new FileInputStream(f));
